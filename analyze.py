@@ -17,23 +17,17 @@ from keras.layers import LSTM
 
 
 def main():
-    # create a stock
     stock = Stock("EURGBP=X", "max", "1d")
 
     # get moving average, MACD, and RSI for stock
     stock.get_MA(21)
-    # stock.get_MA(200)
     stock.get_MACD()
     stock.get_RSI()
 
     # get real price for stock
     real_price = stock.stock_data
-    # for col in real_price.columns:
-    #   print(col)
-    # print("\n\n")
     print(real_price["Close"])
     real_price = real_price.drop('Date', axis=1)
-
     real_price = real_price["Close"].values
 
     # create scaler for normalization
@@ -44,14 +38,14 @@ def main():
 
     # get LSTM model
     # model = create_model(X_train, y_train)
-    model = tf.keras.models.load_model('./saved_model/my_model')
+    model = tf.keras.models.load_model('./real_model/my_model')
 
     # setting up test set
     new_test_set = []
-    for i in range(len(training_set) - 1, len(training_set) - 61, -1):
+    for i in range(len(training_set) - 1, len(training_set) - 101, -1):
         new_test_set.append(training_set[i])
 
-    assert len(new_test_set) == 60
+    assert len(new_test_set) == 100
 
     for j in range(len(test_set)):
         new_test_set.append(test_set[j])
@@ -59,33 +53,30 @@ def main():
 
     test_set_scaled = scalar.transform(test_set)
     X_test = []
-    # y_test = []
 
-    for i in range(60, len(test_set_scaled)):
+    for i in range(100, len(test_set_scaled)):
         component = []
-        for j in range(i - 60, i):
+        for j in range(i - 100, i):
             for k in range(len(test_set_scaled[j])):
                 component.append(test_set_scaled[j][k])
         # this component will contain all the 10 indicators to predict the current price @ i
         actual_component = []
         counter = 0
-        for q in range(60):
+        for q in range(100):
             item = component[counter:counter + 10]
             actual_component.append(item)
             counter += 10
         X_test.append(actual_component)
-        # y_test.append(test_set_scaled[i, :])
 
-    # assert len(X_test) == len(test_set_scaled) - 60 + 1
+    assert len(X_test) == len(test_set_scaled) - 100
     X_test = np.array(X_test)
-    # y_test = np.array(y_test)
 
     # made price predictions
     model_prediction = model.predict(X_test)
     predicted_price = scalar.inverse_transform(model_prediction)[:, 3]
 
     # save the model
-    # export_path_keras = "./{}".format("saved_model/my_model")
+    # export_path_keras = "./{}".format("real_model/my_model")
     # model.save(export_path_keras)
 
     print("Real last 30 days")
@@ -95,31 +86,27 @@ def main():
     print(predicted_price[-30:])
     print("\n")
 
-    # predicted_price = predicted_price[:-1]
-
-    # calculate error
+    # calculate average error to get range
     average_error = 0
     for i in range(len(predicted_price)):
         average_error += abs(predicted_price[-1 * i - 1] - real_price[-1 * i - 1])
     average_error /= len(predicted_price)
 
-    # get accuracy
-    # hit = 0
-    # total = 0
-    # for i in range(len(predicted_price) - 2, -1, -1):
-    #     if predicted_price[-1 * i] < predicted_price[1 * i - 2]:
-    #         pass
-    #     else:
-    #         pass
-
     print(f"Average error: {average_error}")
-    # print(f"Predicted range: ({predicted_next_day_open - average_error} , {predicted_next_day_open + average_error})")
-    # print(f"Predicted next day open: {predicted_next_day_open}")
+    print(f"Predicted range: ({predicted_price[-1] - average_error} , {predicted_price[-1] + average_error})")
+
+    # threshold to determine if current price is too low or too high relative to predicted price so a trade can be made
+    threshold = 0.005
+    if abs(predicted_price[-1] - real_price[-1]) > threshold:
+        print("Great time to execute trade")
 
     # plot results : Predicted vs. Actual
     plt.plot(predicted_price, color="blue", label="Predicted price")
     plt.plot(real_price[len(real_price) - len(predicted_price):], color="red", label="Actual price")
     plt.savefig("/Users/keeratgrewal/Desktop/StockAnalysis/charts/prediction.jpg")
+ 
+    # check for golden cross
+    print(get_golden_cross(stock))
 
 
 def create_model(X_train, y_train):
@@ -162,15 +149,15 @@ def setup_data(stock, scalar):
     X_train = []
     y_train = []
 
-    for i in range(60, len(training_set_scaled)):
+    for i in range(100, len(training_set_scaled)):
         component = []
-        for j in range(i - 60, i):
+        for j in range(i - 100, i):
             for k in range(len(training_set_scaled[j])):
                 component.append(training_set_scaled[j][k])
         # this component will contain all the 10 indicators to predict the current price @ i
         actual_component = []
         counter = 0
-        for q in range(60):
+        for q in range(100):
             item = component[counter:counter + 10]
             actual_component.append(item)
             counter += 10
@@ -183,50 +170,51 @@ def setup_data(stock, scalar):
 
 
 # -------------------------------------------------------------------------------------------------------------- #
-def final_analysis(RSI, MACD_rating, golden_cross):
-    print(f'RSI : {RSI}')
-    if not golden_cross:
-        return "Bad buy, no golden cross present"
-    if golden_cross:
-        if MACD_rating < 3:
-            return "Bad buy, MACD rating < 3"
-        if MACD_rating == 4 and golden_cross and (RSI < 30 or RSI < 60):
-            return "BEST BUY"
-        else:
-            return "COULD BE GOOD BUY"
+
+# def final_analysis(RSI, MACD_rating, golden_cross):
+#     print(f'RSI : {RSI}')
+#     if not golden_cross:
+#         return "Bad buy, no golden cross present"
+#     if golden_cross:
+#         if MACD_rating < 3:
+#             return "Bad buy, MACD rating < 3"
+#         if MACD_rating == 4 and golden_cross and (RSI < 30 or RSI < 60):
+#             return "BEST BUY"
+#         else:
+#             return "COULD BE GOOD BUY"
 
 
-def analyze_MACD(stock):
-    MACD = stock.get_MACD()
-    actual_MACD = MACD[0]
-    # signal_line = MACD[1]
-    MACD_hist = MACD[2]
-    # print(MACD_hist)
-
-    # best scenario = when MACD crosses above signal line and it is positive  --> 4
-    # good scenario = when MACD crosses above signal line and it is negative --> 3
-    # bad scenario = when MACD crosses below signal line and it is positive  --> 2
-    # worst scenario = when MACD crosses below signal line and it is negative  --> 1
-
-    negative = False
-    if MACD_hist[len(MACD_hist) - 1] < 0:
-        negative = True
-
-    for i in range(len(MACD_hist) - 2, -1, -1):
-        if negative and MACD_hist[i] >= 0:
-            if actual_MACD[i] > 0:
-                # print(MACD_hist[i])
-                return 2
-            else:
-                # print(MACD_hist[i])
-                return 1
-        elif not negative and MACD_hist[i] <= 0:
-            if actual_MACD[i] > 0:
-                # print(MACD_hist[i])
-                return 4
-            else:
-                # print(MACD_hist[i])
-                return 3
+# def analyze_MACD(stock):
+#     MACD = stock.get_MACD()
+#     actual_MACD = MACD[0]
+#     # signal_line = MACD[1]
+#     MACD_hist = MACD[2]
+#     # print(MACD_hist)
+#
+#     # best scenario = when MACD crosses above signal line and it is positive  --> 4
+#     # good scenario = when MACD crosses above signal line and it is negative --> 3
+#     # bad scenario = when MACD crosses below signal line and it is positive  --> 2
+#     # worst scenario = when MACD crosses below signal line and it is negative  --> 1
+#
+#     negative = False
+#     if MACD_hist[len(MACD_hist) - 1] < 0:
+#         negative = True
+#
+#     for i in range(len(MACD_hist) - 2, -1, -1):
+#         if negative and MACD_hist[i] >= 0:
+#             if actual_MACD[i] > 0:
+#                 # print(MACD_hist[i])
+#                 return 2
+#             else:
+#                 # print(MACD_hist[i])
+#                 return 1
+#         elif not negative and MACD_hist[i] <= 0:
+#             if actual_MACD[i] > 0:
+#                 # print(MACD_hist[i])
+#                 return 4
+#             else:
+#                 # print(MACD_hist[i])
+#                 return 3
 
 
 """
@@ -289,7 +277,7 @@ def get_golden_cross(stock):
             raise Exception
 
     # plot intersection points on chart and save chart
-    # print(intersection_points)
+
     current_directory = os.getcwd()
     path = current_directory + "/charts/intersection.jpg"
     mpf.plot(stock.stock_data, type='candle', figratio=(18, 10), mav=(50, 200), volume=True, title=stock.ticker.ticker,
